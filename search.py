@@ -143,7 +143,9 @@ df, metadata = pyreadstat.read_sav( "data/recoded.sav")
 
 other_cols = [ col for col in df.columns if col.endswith( "_other" ) ]
 
-ignore_cols = other_cols + [
+q2_cols = [ col for col in df.columns if col.startswith( "Q2_" ) ]
+
+ignore_cols = q2_cols + other_cols + [
     "IPAddress",
     "p0001",
     "p0002",
@@ -159,95 +161,156 @@ ignore_cols = other_cols + [
 ]
 
 independant_cols = [ 
-    "Q1",
-    "Q18",
-    "Q19",
-    "Q23",
+    # "Q1",
+    # "Q18",
+    # "Q19",
+    # "Q23",
 
-    "Q2_01_01",
-    "Q2_02_01",
-    "Q2_03_01",
+    # "Q2_01_01",
+    # "Q2_02_01",
+    # "Q2_03_01",
 
-    "Q3_02",
-    "Q3_04",
-    "Q3_09",
-    "Q3_10",
+    # "Q3_02",
+    # "Q3_04",
+    # "Q3_09",
+    # "Q3_10",
 
-    "Q6_03",
-    "Q6_04",
-    "Q6_05",
-    "Q6_06",
+    # "Q6_03",
+    # "Q6_04",
+    # "Q6_05",
+    # "Q6_06",
 
-    "Q7_01",
-    "Q7_02",
-    "Q7_03",
+    # "Q7_01",
+    # "Q7_02",
+    # "Q7_03",
+    # "Ethnicity_Categorical",
+    "micromobility_user",
  ]
 
 all_cols = df.columns.tolist()
-use_cols = [ col for col in all_cols if col not in ignore_cols ]
+use_cols = [ col for col in all_cols if col not in ignore_cols and col not in independant_cols]
+
+# use_cols = [
+#     "Q1",
+#     "Q6_01",
+#     "Q6_02",
+#     "Q6_03",
+#     "Q6_04",
+#     "Q6_05",
+#     "Q6_06",
+#     "Q6_07",
+#     "Q6_08",
+#     "Q6_09",
+#     "Q6_10",
+#     "Q6_11",
+
+#     "Q7_01",
+#     "Q7_02",
+#     "Q7_03",
+#     "Q7_04",
+#     "Q7_05",
+#     "Q7_06",
+#     "Q7_07",
+#     "Q7_08",
+#     "Q7_09",
+#     "Q7_10",
+
+#     "Q14_01",
+#     "Q14_02",
+#     "Q14_03",
+#     "Q14_04",
+#     "Q14_05",
+#     "Q14_06",
+
+#     "Q16_01",
+#     "Q16_02",
+#     "Q16_03",
+#     "Q16_04",
+#     "Q16_05",
+#     "Q16_06",
+# ]
 
 results = []
 
 skipped = 0
 
 # Get pairs of all 
-for col1, col2 in combinations( use_cols, 2 ):
-    types = []
-    types.append( metadata.variable_measure.get( col1 ) )
-    types.append( metadata.variable_measure.get( col2 ) )
+for col1 in independant_cols:
+    for col2 in use_cols:
+        # Skip comparing matching columns
+        if col1 == col2:
+            continue
 
-    result = {}
+        types = []
+        types.append( metadata.variable_measure.get( col1 ) )
+        types.append( metadata.variable_measure.get( col2 ) )
 
-    # Skip broken types
-    if len( types ) != 2 or None in types:
-        print( f"Types not found - {col1}, {col2}" )
-        continue
+        result = {}
 
-    if "nominal" in types:
-        if "scale" in types:
-            # Nominal/Scale
-            nominal_col = col1 if types[0] == "nominal" else col2
-            scale_col = col1 if types[0] == "scale" else col2
+        # Skip broken types
+        if len( types ) != 2 or None in types:
+            print( f"Types not found - {col1}, {col2}" )
+            continue
 
-            result = anova( df, nominal_col, scale_col )
+        if "nominal" in types:
+            if "scale" in types:
+                # Nominal/Scale
+                nominal_col = col1 if types[0] == "nominal" else col2
+                scale_col = col1 if types[0] == "scale" else col2
+
+                result = anova( df, nominal_col, scale_col )
+            else:
+                # Nominal/Nominal and Nominal/Ordinal
+                result = chi_square( df, col1, col2 )
+
+        elif "ordinal" in types:
+            # Ordinal/Ordinal and Ordinal/Scale
+            result = spearman( df, col1, col2 )
+
+        elif "scale" in types:
+            # Scale/Scale
+            result = pearson( df, col1, col2 )
+
         else:
-            # Nominal/Nominal and Nominal/Ordinal
-            result = chi_square( df, col1, col2 )
+            print( f"No suitable statistic - {col1}, {col2}" )
+            skipped += 1
 
-    elif "ordinal" in types:
-        # Ordinal/Ordinal and Ordinal/Scale
-        result = spearman( df, col1, col2 )
+        if result:
+            results.append( result )
+        else:
+            skipped += 1
 
-    elif "scale" in types:
-        # Scale/Scale
-        result = pearson( df, col1, col2 )
+        processed = len( results )
+        total = processed + skipped
 
-    else:
-        print( f"No suitable statistic - {col1}, {col2}" )
-        skipped += 1
-
-    if result:
-        results.append( result )
-    else:
-        skipped += 1
-
-    processed = len( results )
-    total = processed + skipped
-
-    print( f"{processed}\t{skipped}\t{total}")
+        print( f"{processed}\t{skipped}\t{total}")
 
 results_df = pd.DataFrame( results )
 
-results_df[ "Adjusted P-Value" ] = multipletests(
-    results_df[ "P-Value" ],
-    method="fdr_bh"
-)[1]
-
 if not results_df.empty:
-    results_df = results_df.sort_values( "P-Value" )
-
-    significant = results_df[ results_df[ "Adjusted P-Value" ] < 0.05 ]
-
-    print( significant.head( 30 ) )
+    results_df = results_df.sort_values( "Effect Size", ascending=False )
 
     results_df.to_csv( "data/results.csv", index=False )
+
+    print_cols = [
+        "Variable 1",
+        "Variable 1 Description",
+        "Variable 2",
+        "Variable 2 Description",
+        "P-Value",
+        "Effect Size",
+    ]
+
+    significant = results_df[ results_df["P-Value"] < 0.05 ]
+
+    for _, row in significant.head( 10 ).iterrows():
+        col1 = row[ "Variable 1" ]
+        col2 = row[ "Variable 2" ]
+
+        desc1 = metadata.column_names_to_labels.get( col1 ) or col1
+        desc2 = metadata.column_names_to_labels.get( col2 ) or col2
+
+        print( f"\n{col1}: {desc1}" )
+        print( f"{col2}: {desc2}" )
+        print( f"P-Value: {row["P-Value"]:.5g}" )
+        print( f"Effect Size: {row["Effect Size"]:.3f}" )

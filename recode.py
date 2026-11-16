@@ -57,16 +57,37 @@ trim = [
     ( 28, 8 ),
 ]
 
+usage_cols = [
+    "Q2_01_01",  # E-bike
+    "Q2_02_01",  # Conventional bicycle
+    "Q2_03_01",  # Kick e-scooter
+    "Q2_04_01",  # Kick scooter
+    "Q2_05_01",  # Seated limited speed electric scooter
+    "Q2_07_01",  # E-skateboard
+    "Q2_08_01",  # Skateboard
+    "Q2_09_01",  # Single axis electical mobility device
+]
+
+user_values = [ 4, 5, 6 ]
+
 for q_num in multi:
     zero_columns( df, q_num )
 
 for q_num, keep in trim:
     trim_recode( df, q_num, keep )
 
+micro_user = pd.DataFrame( { "micromobility_user": ( df[ usage_cols].isin( user_values ).any( axis=1 ).astype( int ) ) } )
+
+df = pd.concat( [df, micro_user ], axis=1 )
+
+metadata.column_names_to_labels["micromobility_user"] = ( "Current micromobility use (at least monthly)" )
+metadata.variable_measure["micromobility_user"] = "nominal"
+metadata.variable_value_labels["micromobility_user"] = { 0: "Non-user", 1: "User" }
+
 pyreadstat.write_sav(
     df,
     "data/recoded.sav",
-    column_labels=metadata.column_labels,
+    column_labels=metadata.column_names_to_labels,
     variable_value_labels=metadata.variable_value_labels,
     variable_measure=metadata.variable_measure
 )
