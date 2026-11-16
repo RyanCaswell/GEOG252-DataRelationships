@@ -1,13 +1,27 @@
 import pandas as pd
 import pyreadstat
 
+# Load dataframe and metadata
 df, metadata = pyreadstat.read_sav( "data/original.sav")
+
+# Remove "other" columns from dataframe and metadata
+remove_cols = [ col for col in df.columns if col.endswith( "_other" ) ]
+
+keep_indexes = [ i for i, col in enumerate( df.columns ) if col not in remove_cols ]
+
+df = df.drop( columns=remove_cols)
+
+metadata.column_labels = [ metadata.column_labels[i] for i in keep_indexes ]
+
+for key in remove_cols:
+    metadata.variable_value_labels.pop( key, None )
+    metadata.variable_measure.pop( key, None )
 
 def zero_columns( df, q_num ):
     # Used for multiple answer questions to ensure answers are 0 or 1
     cols = [
         col for col in df.columns
-        if col.startswith( f"Q{q_num}" ) and not col.endswith( "other" )
+        if col.startswith( f"Q{q_num}_" )
     ]
 
     answered = df[ cols ].notna().any( axis=1 )
@@ -16,7 +30,7 @@ def zero_columns( df, q_num ):
 
 def trim_recode( df, q_num, keep):
     if q_num != 2:
-        cols = [ col for col in df.columns if col.startswith( f"Q{q_num}_"  ) and not col.endswith( "_other" ) ]
+        cols = [ col for col in df.columns if col.startswith( f"Q{q_num}_"  ) ]
     else:
         cols = [ col for col in df.columns if col.startswith( f"Q{q_num}_" ) and col.endswith( "_02" ) ]
 
